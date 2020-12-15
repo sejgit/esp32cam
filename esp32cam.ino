@@ -105,7 +105,7 @@ const char* message_status_motion[] = {"OFF", "ON"};
 boolean motion = false; // check for motion boolean
 
 const char* topic_control_reset = "sej/esp32cam/control/reset"; // reset position
-const char* message_control_reset[] = {"--", "RESET"};
+const char* message_control_reset[] = {"--", "RESET", "Resetting"};
 
 const char* topic_status_hb = "sej/esp32cam/status/hb"; // hb topic
 const char* message_status_hb[] = {"OFF", "ON"};
@@ -134,6 +134,11 @@ const long hbInterval = 60000; // how often to send hb
 unsigned long ledMillis = 0;
 const long ledInterval = 3000; // blink led h
 bool ledState = false;
+unsigned long OTAavailableMillis = 0;
+const long OTAavailable = 5 * 60 * 1000; //OTA only available this long after boot
+boolean newpic = true;
+unsigned long newpicMillis = 0;
+const long newpicInterval = 80; // frame interval
 
 /*
  * I/O
@@ -260,48 +265,52 @@ static esp_err_t stream_handler(httpd_req_t *req){
   }
 
   while(true){
-    fb = esp_camera_fb_get();
-    if (!fb) {
-      Serial.println("Camera capture failed");
-      res = ESP_FAIL;
-    } else {
-      if(fb->width > 400){
-        if(fb->format != PIXFORMAT_JPEG){
-          bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
+      while(!newpic) {
+          delay(10);
+      }
+      newpic = false;
+      fb = esp_camera_fb_get();
+      if (!fb) {
+          Serial.println("Camera capture failed");
+          res = ESP_FAIL;
+      } else {
+          if(fb->width > 400){
+              if(fb->format != PIXFORMAT_JPEG){
+                  bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
+                  esp_camera_fb_return(fb);
+                  fb = NULL;
+                  if(!jpeg_converted){
+                      Serial.println("JPEG compression failed");
+                      res = ESP_FAIL;
+                  }
+              } else {
+                  _jpg_buf_len = fb->len;
+                  _jpg_buf = fb->buf;
+              }
+          }
+      }
+      if(res == ESP_OK){
+          size_t hlen = snprintf((char *)part_buf, 64, _STREAM_PART, _jpg_buf_len);
+          res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
+      }
+      if(res == ESP_OK){
+          res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
+      }
+      if(res == ESP_OK){
+          res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
+      }
+      if(fb){
           esp_camera_fb_return(fb);
           fb = NULL;
-          if(!jpeg_converted){
-            Serial.println("JPEG compression failed");
-            res = ESP_FAIL;
-          }
-        } else {
-          _jpg_buf_len = fb->len;
-          _jpg_buf = fb->buf;
-        }
+          _jpg_buf = NULL;
+      } else if(_jpg_buf){
+          free(_jpg_buf);
+          _jpg_buf = NULL;
       }
-    }
-    if(res == ESP_OK){
-      size_t hlen = snprintf((char *)part_buf, 64, _STREAM_PART, _jpg_buf_len);
-      res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
-    }
-    if(res == ESP_OK){
-      res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
-    }
-    if(res == ESP_OK){
-      res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
-    }
-    if(fb){
-      esp_camera_fb_return(fb);
-      fb = NULL;
-      _jpg_buf = NULL;
-    } else if(_jpg_buf){
-      free(_jpg_buf);
-      _jpg_buf = NULL;
-    }
-    if(res != ESP_OK){
-      break;
-    }
-    //Serial.printf("MJPG: %uB\n",(uint32_t)(_jpg_buf_len));
+      if(res != ESP_OK){
+          break;
+      }
+      //Serial.printf("MJPG: %uB\n",(uint32_t)(_jpg_buf_len));
   }
   return res;
 }
@@ -441,12 +450,13 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     // Reset the camera if RESET received
     if(strcmp(topic, topic_control_reset)==0){
         if(strcmp(mypayload, message_control_reset[1]) == 0) {
+            Serial.println(F("Rebooting..."));
             if(mqttClient.connected()) {
+                mqttClient.publish(topic_control_reset, message_control_reset[2], true);
+                delay(5000);
                 mqttClient.publish(topic_control_reset, message_control_reset[0], true);
             }
             // reset the camera
-            Serial.println(F("Rebooting..."));
-            delay(5000);
             ESP.restart();
         }
     }
@@ -733,9 +743,22 @@ void setup() {
  * loop
  */
 void loop() {
-    ArduinoOTA.handle();
-
     currentMillis = millis();
+
+    // only do OTA for a few munutes after boot or reboot
+    // send a MQTT reset if you want to do an OTA
+    if(OTAavailableMillis == 0) {
+        OTAavailableMillis = currentMillis;
+    }
+    if(currentMillis <= (OTAavailableMillis + OTAavailable)) {
+        ArduinoOTA.handle();
+    }
+
+    // frame timer
+    if(currentMillis - newpicInterval > newpicMillis) {
+        newpicMillis = currentMillis;
+        newpic = true;
+    }
 
     // Wifi status & init if dropped
     if(WiFi.status() != WL_CONNECTED) {
