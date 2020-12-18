@@ -92,22 +92,30 @@ time_t local;
 /*
  *  MQTT
  */
+int status = WL_IDLE_STATUS;
+boolean mqttConnected = false;
+
 const char* topic = "sej"; // main topic
 String clientId = "esp32cam"; // client ID for this unit
 char buffer[256];
 
 // MQTT topics
-const char* topic_control_motion = "sej/esp32cam/control/motion"; // control topic
+char topic_control_motion [30];
+String topic_control_motion_s = "sej/" + clientId + "/control/motion";
+
 const char* message_control_motion[] = {"OFF", "ON"};
 
-const char* topic_status_motion = "sej/esp32cam/status/motion"; // bounce back
+char topic_status_motion [30];
+String topic_status_motion_s = "sej/" + clientId + "/status/motion"; // bounce back
 const char* message_status_motion[] = {"OFF", "ON"};
 boolean motion = false; // check for motion boolean
 
-const char* topic_control_reset = "sej/esp32cam/control/reset"; // reset position
+char topic_control_reset[30];
+String topic_control_reset_s= "sej/" + clientId + "/control/reset"; // reset position
 const char* message_control_reset[] = {"--", "RESET", "Resetting"};
 
-const char* topic_status_hb = "sej/esp32cam/status/hb"; // hb topic
+char topic_status_hb[30];
+String topic_status_hb_s = "sej/" + clientId +"/status/hb"; // hb topic
 const char* message_status_hb[] = {"OFF", "ON"};
 
 const char* willTopic = topic; // will topic
@@ -339,7 +347,7 @@ void startCameraServer(){
 
 
 /*
- * Establish Wi-Fi connection & start web server
+ * Establish Wi-Fi connection
  */
 boolean initWifi(int tries = 2, int waitTime = 2) {
     int status = WL_IDLE_STATUS;
@@ -626,6 +634,11 @@ void setup() {
     oldmin = 99;
 
     // MQTT
+    clientId = clientId + WiFi.localIP();
+    topic_control_motion_s.toCharArray(topic_control_motion, 30); // control topic
+    topic_status_motion_s.toCharArray(topic_status_motion, 30); // bounce back
+    topic_control_reset_s.toCharArray(topic_control_reset, 30); // reset position
+    topic_status_hb_s.toCharArray(topic_status_hb, 30); // hb topic
     mqttClient.setServer(mqtt_server, mqtt_serverport);
     mqttClient.setCallback(mqttCallback);
     if(initMQTT()) {
@@ -744,6 +757,8 @@ void setup() {
  */
 void loop() {
     currentMillis = millis();
+    status = WiFi.status();
+    mqttConnected = mqttClient.connected();
 
     // only do OTA for a few munutes after boot or reboot
     // send a MQTT reset if you want to do an OTA
