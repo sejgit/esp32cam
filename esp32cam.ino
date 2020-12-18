@@ -7,6 +7,7 @@
  *
  *  init   SeJ 10 03 2020 init merge awningMQTT and esp32-cam-video
  *  update SeJ 12 18 2020 otafocus feature to make esp32 individual mqtt
+ *  update SeJ newserver
  */
 
 #include <WiFiUdp.h>
