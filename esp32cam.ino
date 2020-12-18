@@ -6,7 +6,7 @@
  *  --fqbn esp32:esp32:esp32 not used as ota will not work
  *
  *  init   SeJ 10 03 2020 init merge awningMQTT and esp32-cam-video
- *  update SeJ
+ *  update SeJ 12 18 2020 otafocus feature to make esp32 individual mqtt
  */
 
 #include <WiFiUdp.h>
@@ -100,21 +100,22 @@ String clientId = "esp32cam"; // client ID for this unit
 char buffer[256];
 
 // MQTT topics
-char topic_control_motion [30];
+const int buffsize = 45;
+char topic_control_motion [buffsize];
 String topic_control_motion_s = "sej/" + clientId + "/control/motion";
 
 const char* message_control_motion[] = {"OFF", "ON"};
 
-char topic_status_motion [30];
+char topic_status_motion [buffsize];
 String topic_status_motion_s = "sej/" + clientId + "/status/motion"; // bounce back
 const char* message_status_motion[] = {"OFF", "ON"};
 boolean motion = false; // check for motion boolean
 
-char topic_control_reset[30];
+char topic_control_reset[buffsize];
 String topic_control_reset_s= "sej/" + clientId + "/control/reset"; // reset position
-const char* message_control_reset[] = {"--", "RESET", "Resetting"};
+const char* message_control_reset[] = {"--", "RESET", "Resetting", "OTA", "OTA available"};
 
-char topic_status_hb[30];
+char topic_status_hb[buffsize];
 String topic_status_hb_s = "sej/" + clientId +"/status/hb"; // hb topic
 const char* message_status_hb[] = {"OFF", "ON"};
 
@@ -450,7 +451,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
             motion = false;
             cfgChangeFlag = true;
         }
-        if(mqttClient.connected()) {
+        if(mqttConnected) {
             mqttClient.publish(topic_status_motion, message_status_motion[motion], true);
         }
     }
@@ -459,13 +460,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     if(strcmp(topic, topic_control_reset)==0){
         if(strcmp(mypayload, message_control_reset[1]) == 0) {
             Serial.println(F("Rebooting..."));
-            if(mqttClient.connected()) {
+            if(mqttConnected) {
                 mqttClient.publish(topic_control_reset, message_control_reset[2], true);
                 delay(5000);
                 mqttClient.publish(topic_control_reset, message_control_reset[0], true);
             }
             // reset the camera
             ESP.restart();
+        } else if(strcmp(mypayload, message_control_reset[3]) == 0) {
+            Serial.println(F("OTA turned on..."));
+            OTAavailableMillis = 0;
         }
     }
 }
@@ -634,11 +638,15 @@ void setup() {
     oldmin = 99;
 
     // MQTT
-    clientId = clientId + WiFi.localIP();
-    topic_control_motion_s.toCharArray(topic_control_motion, 30); // control topic
-    topic_status_motion_s.toCharArray(topic_status_motion, 30); // bounce back
-    topic_control_reset_s.toCharArray(topic_control_reset, 30); // reset position
-    topic_status_hb_s.toCharArray(topic_status_hb, 30); // hb topic
+    clientId = clientId + WiFi.localIP().toString();
+    topic_control_motion_s = "sej/" + clientId + "/control/motion";
+    topic_status_motion_s = "sej/" + clientId + "/status/motion"; // bounce back
+    topic_control_reset_s = "sej/" + clientId + "/control/reset"; // reset position
+    topic_status_hb_s = "sej/" + clientId +"/status/hb"; // hb topic
+    topic_control_motion_s.toCharArray(topic_control_motion, buffsize); // control topic
+    topic_status_motion_s.toCharArray(topic_status_motion, buffsize); // bounce back
+    topic_control_reset_s.toCharArray(topic_control_reset, buffsize); // reset position
+    topic_status_hb_s.toCharArray(topic_status_hb, buffsize); // hb topic
     mqttClient.setServer(mqtt_server, mqtt_serverport);
     mqttClient.setCallback(mqttCallback);
     if(initMQTT()) {
@@ -761,12 +769,21 @@ void loop() {
     mqttConnected = mqttClient.connected();
 
     // only do OTA for a few munutes after boot or reboot
-    // send a MQTT reset if you want to do an OTA
+    // send a MQTT RESET or OTA (without reset) if you want to do an OTA
     if(OTAavailableMillis == 0) {
         OTAavailableMillis = currentMillis;
+        if(mqttConnected) {
+            mqttClient.publish(topic_control_reset, message_control_reset[4], true);
+        }
     }
     if(currentMillis <= (OTAavailableMillis + OTAavailable)) {
         ArduinoOTA.handle();
+    } else if(OTAavailableMillis > 1) {
+        OTAavailableMillis = 1;
+        if(mqttConnected) {
+            mqttClient.publish(topic_control_reset, message_control_reset[0], true);
+        }
+        Serial.println(F("OTA not available."));
     }
 
     // frame timer
@@ -776,14 +793,14 @@ void loop() {
     }
 
     // Wifi status & init if dropped
-    if(WiFi.status() != WL_CONNECTED) {
+    if(status != WL_CONNECTED) {
         Serial.println(F("Reconnecting WiFi."));
         if(initWifi()) {
             Serial.println(F("WiFi connected."));
         }
     } else {
         // MQTT status & init if dropped
-        if(!mqttClient.connected()) {
+        if(!mqttConnected) {
             Serial.println(F("Reconnecting MQTT."));
             if(initMQTT()) {
                 Serial.println(F("MQTT connected."));
@@ -797,7 +814,7 @@ void loop() {
     if(currentMillis - hbMillis > hbInterval) {
         hbMillis = currentMillis;
         heartbeat = not(heartbeat);
-        if(mqttClient.connected()) {
+        if(mqttConnected) {
             mqttClient.publish(topic_status_hb, message_status_hb[heartbeat] , true);
         }
     }
@@ -806,7 +823,7 @@ void loop() {
     updateLocalTime();
 
     // flash local led hb if any non-standard condition otherwise off
-    if(WiFi.status() != WL_CONNECTED || !mqttClient.connected()) {
+    if(WiFi.status() != WL_CONNECTED || !mqttConnected) {
         if(currentMillis - ledMillis > ledInterval) {
             ledMillis = currentMillis;
             ledState = not(ledState);
