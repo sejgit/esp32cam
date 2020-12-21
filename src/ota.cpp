@@ -22,8 +22,6 @@ void startOTA(void)
 				type = "filesystem";
 
 			// NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-            LittleFS.end();
-            // SPIFFS.end();
 			Serial.println("Start updating " + type);
 			lastProgress = 0;
 			otaStarted = true;

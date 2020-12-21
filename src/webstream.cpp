@@ -23,6 +23,7 @@ void handleNotFound();
 void initWebStream(void)
 {
 #ifdef ENABLE_WEBSERVER
+    stopWeb = false;
 	// Create the task for the web server
 	xTaskCreate(webTask, "WEB", 4096, NULL, 1, &webTaskHandler);
 
@@ -76,7 +77,7 @@ void webTask(void *pvParameters)
 			// User requested web server stop
 			server.close();
 			// Delete this task
-			vTaskDelete(NULL);
+			vTaskDelete(webTaskHandler);
 		}
 		delay(100);
 }
@@ -95,7 +96,7 @@ void handle_jpg_stream(void)
 	response += "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
 	server.sendContent(response);
 
-	while (1)
+	while (!stopWeb)
 	{
 		cam.run();
 		if (!thisClient.connected())

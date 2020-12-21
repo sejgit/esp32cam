@@ -360,7 +360,8 @@ boolean initWifi(int tries = 2, int waitTime = 2) {
         int timeout = waitTime;
 
         while (WiFi.status() != WL_CONNECTED && (timeout-- > 0)) {
-            delay(1000);
+            delay(500);
+            Serial.print(".");
         }
         if (WiFi.status() == WL_CONNECTED) {
             break;

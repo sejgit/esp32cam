@@ -1,12 +1,5 @@
 #include <Arduino.h>
 
-/* Passwords & Ports
- * wifi: ssid, password
- * ISY: hash, isy, isyport
- * MQTT mqtt_server, mqtt_serverport
- */
-#include <../../../../../../../../../Projects/keys/sej/sej.h>
-
 // WiFi stuff
 #include <WiFi.h>
 #include <WebServer.h>
@@ -22,23 +15,9 @@
 #include "OV2640Streamer.h"
 #include "CRtspSession.h"
 
-// TODO XXX
-// Button stuff
-/* #include <OneButton.h> */
-
 // MQTT stuff
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-
-// time stuff
-#include <Timezone.h>
-
-// file stuff
-#include <FS.h>
-// #include <LittleFS.h> // use for esp8266
-#include <SPIFFS.h> // use for esp32
-#define LittleFS SPIFFS //use for esp32
-#define FORMAT_FS_IF_FAILED true // use for esp32
 
 // Select which of the servers are active
 // Select only one or the streaming will be very slow!

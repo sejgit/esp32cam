@@ -3,6 +3,7 @@
 .saves/
 build/
 .pio
+sej.h
 
 # Prerequisites
 *.d
