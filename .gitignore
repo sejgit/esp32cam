@@ -1,5 +1,7 @@
 # sej adds
 .ccls-cache/
+.ccls
+.clang_complete
 .saves/
 build/
 .pio
